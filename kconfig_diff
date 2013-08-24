@@ -1,0 +1,84 @@
+#!/bin/bash
+#
+# Copyright 2013  phjanderson
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+if [ $# -lt 2 ]
+then
+  echo "Kernel config diff tool 1.0
+by phjanderson
+
+Usage: ./kconfig_diff.sh source_file target_file
+
+Only entries from the target file are returned which do not exist in the source file or are changed in target file.
+"
+  exit -1
+fi
+
+source_filename="$1"
+if [ ! -f "$source_filename" ]
+then
+  echo "Error: source file \"$source_filename\" not found!"
+  exit -1
+fi
+
+target_filename="$2"
+if [ ! -f "$target_filename" ]
+then
+  echo "Error: target file \"$target_filename\" not found!"
+  exit -1
+fi
+
+declare -A source_config
+
+while read -r line
+do
+  normalized_line="$line"
+  if [[ "$line" =~ ^#\ ([^\ ]*)\ is\ not\ set ]]
+  then
+    normalized_line="${BASH_REMATCH[1]}=###"
+  fi
+  
+  if [[ "$normalized_line" =~ ^([^=]*)=(.*) ]]
+  then
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+    source_config["$key"]="$value"
+  fi
+done < "$source_filename"
+
+
+while read -r line
+do
+  normalized_line="$line"
+  if [[ "$line" =~ ^#\ ([^\ ]*)\ is\ not\ set ]]
+  then
+    normalized_line="${BASH_REMATCH[1]}=###"
+  fi
+  
+  if [[ "$normalized_line" =~ ^([^=]*)=(.*) ]]
+  then
+    key="${BASH_REMATCH[1]}"
+    value="${BASH_REMATCH[2]}"
+
+    if [ "$value" != "${source_config[$key]}" ]
+    then
+      echo $line
+    fi
+  fi
+done < "$target_filename"
+
+

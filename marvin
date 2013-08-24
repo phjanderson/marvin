@@ -1,0 +1,960 @@
+#!/bin/bash
+#
+# Copyright 2013  phjanderson
+# 
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+
+set -e
+
+################################################################################
+# globals
+################################################################################
+
+MARVIN_APPNAME="Marvin"
+MARVIN_APPLABEL="Marvin the Paranoid Android Kernel Builder"
+MARVIN_APPVERSION="1.0"
+
+build_timestamp=""
+
+package=0
+build_modules=0
+
+marvin_current_build_profile_device=""
+marvin_current_build_profile_options=()
+
+bold=`tput bold`
+underline=`tput smul`
+normal=`tput sgr0`
+
+retval=""
+
+################################################################################
+# functions
+################################################################################
+
+function load_settings() {
+  MARVIN_KERNEL_SRC_ROOT="${MARVIN_ROOT}/../Kernel-3188"
+  MARVIN_KERNEL_BUILD_TARGET="zkernel.img"
+  MARVIN_MAKEOPTS="ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- -j2"
+  MARVIN_MAKECMD="make"
+  MARVIN_BUILDER_ALIAS="marvin"
+
+  if [ ! -f "${MARVIN_PLATFORM_ROOT}/selected_platform" ]
+  then
+    echo "Error: no platform selected, please select a platform using the platform command"
+    exit -1
+  fi
+  . "${MARVIN_PLATFORM_ROOT}/selected_platform"
+
+  MARVIN_SELECTED_PLATFORM_ROOT="${MARVIN_PLATFORM_ROOT}/${MARVIN_SELECTED_PLATFORM}"
+
+  if [ ! -f "${MARVIN_SELECTED_PLATFORM_ROOT}/settings" ]
+  then
+    echo "Notice: platform settings file ${MARVIN_SELECTED_PLATFORM_ROOT}/settings not found, using default settings"
+    echo
+  else
+    . "${MARVIN_SELECTED_PLATFORM_ROOT}/settings"
+  fi
+
+  MARVIN_KERNEL_SRC_ROOT="$(readlink -f "${MARVIN_KERNEL_SRC_ROOT}")"
+
+  if [ ! -d "$MARVIN_KERNEL_SRC_ROOT" ]
+  then
+    echo "Error: Kernel source root \"$MARVIN_KERNEL_SRC_ROOT\" does not exist"
+    echo "Please check the platform settings file ${MARVIN_SELECTED_PLATFORM_ROOT}/settings"
+    exit -1
+  fi
+
+  if [ ! -f "${MARVIN_SELECTED_PLATFORM_ROOT}/build_profiles" ]
+  then
+    touch "${MARVIN_SELECTED_PLATFORM_ROOT}/build_profiles"
+  fi
+  
+  MARVIN_BUILD_PROFILES=()
+  MARVIN_BUILD_PROFILES+=("manual")
+  while read -r line
+  do
+    if [[ ! -z "$line" && ! "$line" =~ ^# ]]
+    then
+      MARVIN_BUILD_PROFILES+=("$line")
+    fi
+  done < "${MARVIN_SELECTED_PLATFORM_ROOT}/build_profiles"
+
+  if [ ! -f "${MARVIN_SELECTED_PLATFORM_ROOT}/current_build_profile" ]
+  then
+    touch "${MARVIN_SELECTED_PLATFORM_ROOT}/current_build_profile"
+  fi
+  . "${MARVIN_SELECTED_PLATFORM_ROOT}/current_build_profile"
+
+  cd "$MARVIN_KERNEL_SRC_ROOT"
+}
+
+
+function display_app_label() {
+  local label="${MARVIN_APPLABEL} ${MARVIN_APPVERSION}"
+
+  for (( i = 1; i <= ${#label} ; i++ ))
+  do
+    echo -n "="
+  done
+  echo
+
+  echo "${MARVIN_APPLABEL} ${MARVIN_APPVERSION}"
+  echo by phjanderson
+
+  for (( i = 1; i <= ${#label} ; i++ ))
+  do
+    echo -n "="
+  done
+  echo
+  echo
+}
+
+
+function get_device_directory_name() {
+  retval="${MARVIN_SELECTED_PLATFORM_ROOT}/output/kernel_"
+  if [ "$package" == "1" ]
+  then
+    retval+="${build_timestamp}_"
+  fi
+  retval+="${MARVIN_BUILDER_ALIAS}_${marvin_current_build_profile_device}"
+}
+
+
+function update_current_build_profile_file() {
+  > "${MARVIN_SELECTED_PLATFORM_ROOT}/current_build_profile"
+  echo "marvin_current_build_profile_device=\"${marvin_current_build_profile_device}\""  >> "${MARVIN_SELECTED_PLATFORM_ROOT}/current_build_profile"
+  echo "marvin_current_build_profile_options=(${marvin_current_build_profile_options[@]})"  >> "${MARVIN_SELECTED_PLATFORM_ROOT}/current_build_profile"
+}
+
+
+function clear_current_build_profile() {
+  marvin_current_build_profile_device=""
+  marvin_current_build_profile_options=()
+  update_current_build_profile_file
+}
+
+
+function generate_config() {
+  if [ "$1" == "manual" ]
+  then
+    echo manual .config mode selected
+    echo skipping .config generation
+
+    marvin_current_build_profile_device="manual"
+    marvin_current_build_profile_options=()
+
+    update_current_build_profile_file
+
+    return
+  fi
+
+  if [ $# -lt 1 ]
+  then
+    echo "Error: invalid build profile: $@
+
+Please use the following format:
+${bold}device option1 option2${normal}
+
+or for using the current .config file as-is:
+${bold}manual${normal}
+
+Each of the above should point to a config in the base, device and option directory.
+"
+    exit -1
+  fi
+
+  local device="$1"
+  if [ $# -gt 1 ]
+  then
+    shift 1
+    local options=($@)
+  else
+    local options=()
+  fi
+
+  local baseconfig="${MARVIN_SELECTED_PLATFORM_ROOT}/config/base.config"
+  if [ ! -f "$baseconfig" ]
+  then
+    echo "Error: Base config \"$baseconfig\" does not exist"
+    exit -1
+  fi
+
+  local deviceconfig="${MARVIN_SELECTED_PLATFORM_ROOT}/config/device/${device}.config"
+  if [ ! -f "$deviceconfig" ]
+  then
+    echo "Error: device config \"$deviceconfig\" does not exist"
+    exit -1
+  fi
+
+  local optionconfigs=()
+  for option in "${options[@]}"
+  do
+    local optionconfig="${MARVIN_SELECTED_PLATFORM_ROOT}/config/option/${option}.config"
+    optionconfigs+=("$optionconfig")
+    if [ ! -f "$optionconfig" ]
+    then
+      echo "Error: option config \"$optionconfig\" does not exist"
+      exit -1
+    fi
+  done
+
+      echo "Selected build profile:  
+Device  : ${device}
+Options : ${options[@]}
+"
+
+  "${MARVIN_ROOT}/kconfig_merge" "$baseconfig" "$deviceconfig" > .config
+  for optionconfig in "${optionconfigs[@]}"
+  do
+    cp .config .config.marvintemp
+    "${MARVIN_ROOT}/kconfig_merge" .config.marvintemp "$optionconfig" > .config
+  done
+
+  if [ -f .config.marvintemp ]
+  then
+    rm .config.marvintemp
+  fi
+  
+  "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS oldnoconfig
+  
+  marvin_current_build_profile_device="$device"
+  marvin_current_build_profile_options=()
+  marvin_current_build_profile_options=("${options[@]}")
+
+  update_current_build_profile_file
+}
+
+
+function build() {
+  if [ -f kernel.img ]
+  then
+    rm kernel.img
+  fi
+  
+  echo "==========
+Building a kernel using:  
+Device  : ${marvin_current_build_profile_device}
+Options : ${marvin_current_build_profile_options[@]}
+==========
+"
+
+  "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS "$MARVIN_KERNEL_BUILD_TARGET"
+
+  get_device_directory_name
+  device_directory_name="$retval"
+
+  local build_label=""
+  
+  if [ "$package" == "1" ]
+  then
+    build_label+="${build_timestamp}_"
+  fi
+
+  build_label+="${MARVIN_BUILDER_ALIAS}_${marvin_current_build_profile_device}"
+  
+  if [ "${#marvin_current_build_profile_options[@]}" -gt 0 ]
+  then
+    build_label+="_`echo ${marvin_current_build_profile_options[@]} | sed -e 's/ /_/g'`"
+  fi
+
+  kernel_file_name="kernel_${build_label}.img"
+  kernel_config_file_name="kernel_${build_label}.config"
+  kernel_txt_file_name="kernel_${build_label}.txt"
+
+  mkdir -p "$device_directory_name"
+
+  cp kernel.img "${device_directory_name}/${kernel_file_name}"
+  cp .config "${device_directory_name}/${kernel_config_file_name}"
+
+  display_app_label > "${device_directory_name}/${kernel_txt_file_name}"
+  display_profile_description ${marvin_current_build_profile_device} "${marvin_current_build_profile_options[@]}" >> "${device_directory_name}/${kernel_txt_file_name}"
+
+  if [ "$build_modules" == "1" ]
+  then
+    echo
+    echo "==========
+Building kernel modules using:
+Device  : ${marvin_current_build_profile_device}
+Options : ${marvin_current_build_profile_options[@]}
+==========
+"
+
+    if [ -d "${device_directory_name}/lib" ]
+    then
+      rm -rf "${device_directory_name}/lib"
+    fi
+    
+    "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS modules
+    "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS modules_install INSTALL_MOD_PATH="${device_directory_name}"
+  fi
+}
+
+
+function list_platforms() {
+  echo Available platforms:
+  
+  for entry in ${MARVIN_PLATFORM_ROOT}/*
+  do
+    if [ -d "$entry" ]
+    then
+      local platform="`basename \"$entry\"`"
+      
+      echo "${bold}$platform${normal}"
+      if [ -f "${MARVIN_PLATFORM_ROOT}/${platform}/info" ]
+      then
+        tr '\n' ' ' < "${MARVIN_PLATFORM_ROOT}/${platform}/info"
+        echo
+      fi
+      echo
+    fi
+  done
+}
+
+
+function list_build_profiles() {
+  echo Available build profiles:
+  
+  for build_profile_idx in "${!MARVIN_BUILD_PROFILES[@]}"
+  do
+    if [ "${MARVIN_BUILD_PROFILES[$build_profile_idx]}" == "manual" ]
+    then
+      echo "${build_profile_idx}: use the current .config file as-is"
+    else
+      echo "${build_profile_idx}: ${MARVIN_BUILD_PROFILES[$build_profile_idx]}"
+    fi
+  done
+  
+  echo
+  echo Build profiles can be added / modified using the ${bold}profiles${normal} command.
+}
+
+
+function list_config_options() {
+  echo === Available device configurations ===
+
+  for config_file_path in ${MARVIN_SELECTED_PLATFORM_ROOT}/config/device/*.config
+  do
+    local config="`basename \"${config_file_path}\" | sed 's/.config//'`"
+    
+    echo "${bold}$config${normal}"
+    cat ${config_file_path} | grep "###" | sed 's/### *//g'
+    echo
+  done
+
+  echo === Available option configurations ===
+
+  for config_file_path in ${MARVIN_SELECTED_PLATFORM_ROOT}/config/option/*.config
+  do
+    local config="`basename \"${config_file_path}\" | sed 's/.config//'`"
+    
+    echo "${bold}$config${normal}"
+    cat ${config_file_path} | grep "###" | sed 's/### *//g'
+    echo
+  done
+}
+
+
+function display_profile_description() {
+  local device="$1"
+  if [ $# -gt 1 ]
+  then
+    shift 1
+    local options=($@)
+  else
+    local options=()
+  fi
+
+  local device_file_path="${MARVIN_SELECTED_PLATFORM_ROOT}/config/device/${device}.config"
+  
+  echo "$device:"
+  cat "${device_file_path}" | grep "###" | sed 's/### *//g'
+  echo
+  
+  for option in "${options[@]}"
+  do
+    local option_file_path="${MARVIN_SELECTED_PLATFORM_ROOT}/config/option/${option}.config"
+    
+    echo "$option:"
+    cat "${option_file_path}" | grep "###" | sed 's/### *//g'
+    echo
+  done
+}
+
+################################################################################
+# actions
+################################################################################
+
+function action_config() {
+  if [ $# -lt 1 ]
+  then
+    echo No build profile specified
+    echo Please specify one of the existing build profiles listed below or specify a custom build profile in the format:
+    echo ${underline}deviceconfig${normal} [${underline}optionconfig1${normal}] [${underline}optionconfig2${normal}] ...
+    echo
+ 
+    if [ ! -z "${marvin_current_build_profile_device}" ]
+    then
+      echo "Current build profile:
+Device  : ${marvin_current_build_profile_device}
+Options : ${marvin_current_build_profile_options[@]}
+"
+    fi
+    
+    list_build_profiles
+
+    echo
+    
+    list_config_options
+
+    echo
+    exit -1
+  elif [ $# -eq 1 ]
+  then
+    local build_profile_idx="$1"
+    local build_profile=(${MARVIN_BUILD_PROFILES[$1]})
+  else
+    local build_profile=("$@")
+  fi
+
+  generate_config "${build_profile[@]}"
+  echo
+}
+
+
+function action_profiles() {
+  echo "## Please specify your build profiles below using following format: device option1 option2
+## for example:
+## t428 cpu1704 ddr600
+## mk908
+" > "${MARVIN_SELECTED_PLATFORM_ROOT}/build_profiles.temp"
+  cat "${MARVIN_SELECTED_PLATFORM_ROOT}/build_profiles" >> "${MARVIN_SELECTED_PLATFORM_ROOT}/build_profiles.temp"
+
+  editor "${MARVIN_SELECTED_PLATFORM_ROOT}/build_profiles.temp"
+
+  echo Saving the new profile list
+
+  cat "${MARVIN_SELECTED_PLATFORM_ROOT}/build_profiles.temp" | grep -v "^##" | grep -v "^ *$" > "${MARVIN_SELECTED_PLATFORM_ROOT}/build_profiles"
+
+  rm "${MARVIN_SELECTED_PLATFORM_ROOT}/build_profiles.temp"
+}
+
+
+function action_build() {
+  if [ -z "$marvin_current_build_profile_device" ]
+  then
+    echo No configuration selected, please run the config command first
+    exit -1
+  fi
+
+  build_timestamp="`date +%Y%m%d_%H%M%S`"
+
+  build
+  
+  get_device_directory_name
+  device_directory_name="$retval"
+  device_directory_basename="`basename "$device_directory_name"`"
+
+  if [ "$package" == "1" ]
+  then
+    local old_pwd="`pwd`"
+    cd "$device_directory_name"/..
+    zip -9 -r -q "$device_directory_basename" "$device_directory_basename"
+    cd "$old_pwd"
+  fi
+  
+  echo
+  echo Your kernel is ready in:
+  echo ${device_directory_name}
+  
+  if [ "$package" == "1" ]
+  then
+    echo
+    echo And also bundled as a zip:
+    echo ${device_directory_name}.zip
+  fi
+  
+  echo
+  
+  update_current_build_profile_file
+}
+
+
+function action_build_all() {
+  build_timestamp="`date +%Y%m%d_%H%M%S`"
+
+  local previous_marvin_current_build_profile_device="$marvin_current_build_profile_device"
+  local previous_marvin_current_build_profile_options=("${marvin_current_build_profile_options[@]}")
+  if [ -f .config ]
+  then
+    cp .config .config.marvinbackup
+  fi
+  
+  declare -A device_directory_names
+  for build_profile_string in "${MARVIN_BUILD_PROFILES[@]}"
+  do
+    if [ "${build_profile_string}" != "manual" ]
+    then
+      local build_profile=(${build_profile_string})
+      generate_config "${build_profile[@]}"
+      build
+      
+      get_device_directory_name
+      local device_directory_name="$retval"
+      device_directory_names["$device_directory_name"]="1"
+    fi
+  done
+
+  if [ -f .config.marvinbackup ]
+  then
+    mv .config.marvinbackup .config
+  fi
+  marvin_current_build_profile_device="$previous_marvin_current_build_profile_device"
+  marvin_current_build_profile_options=("${previous_marvin_current_build_profile_options[@]}")
+
+  if [ "$package" == "1" ]
+  then
+    for device_directory_name in "${!device_directory_names[@]}"
+    do
+      local device_directory_basename="`basename "$device_directory_name"`"
+      local old_pwd="`pwd`"
+      cd "$device_directory_name"/..
+      zip -9 -r -q "$device_directory_basename" "$device_directory_basename"
+      cd "$old_pwd"
+    done
+  fi
+  
+  echo
+  echo Your kernels are ready in:
+  for device_directory_name in "${!device_directory_names[@]}"
+  do
+    echo ${device_directory_name}
+  done
+
+  if [ "$package" == "1" ]
+  then
+    echo
+    echo And also bundled as zips:
+    for device_directory_name in "${!device_directory_names[@]}"
+    do
+      echo ${device_directory_name}.zip
+    done
+  fi
+
+  echo
+    
+  update_current_build_profile_file
+}
+
+
+function action_build_modules() {
+  build_modules=1
+  action_build "$@"
+}
+
+
+function action_build_package() {
+  package=1
+  action_build "$@"
+}
+
+
+function action_build_package_all() {
+  package=1
+  action_build_all "$@"
+}
+
+
+function action_platform() {
+  if [ -z "$1" ]
+  then
+    echo No platform specified, please specify one of the platforms listed below
+    echo
+
+    if [ -f "${MARVIN_PLATFORM_ROOT}/selected_platform" ]
+    then
+      . "${MARVIN_PLATFORM_ROOT}/selected_platform"
+      if [ ! -z "${MARVIN_SELECTED_PLATFORM}" ]
+      then
+        echo "Current platfom: ${MARVIN_SELECTED_PLATFORM}"
+        echo
+      fi
+    fi
+  
+    list_platforms
+    exit -1
+  fi
+  
+  MARVIN_SELECTED_PLATFORM="$1"
+  MARVIN_SELECTED_PLATFORM_ROOT="${MARVIN_PLATFORM_ROOT}/${MARVIN_SELECTED_PLATFORM}"
+  if [ ! -d "${MARVIN_SELECTED_PLATFORM_ROOT}" ]
+  then
+    echo "Error: platform directory ${MARVIN_SELECTED_PLATFORM_ROOT} not found"
+    exit -1
+  fi
+
+  echo "MARVIN_SELECTED_PLATFORM=\"rk3188\"" > "${MARVIN_PLATFORM_ROOT}/selected_platform"
+  
+  echo "Selected platfom ${MARVIN_SELECTED_PLATFORM}"
+  echo "Platform directory is ${MARVIN_SELECTED_PLATFORM_ROOT}"
+  echo
+}
+
+
+function action_install_builddep() {
+  if [ -z "`which apt-get`" ]
+  then
+    echo Only works on Ubuntu / Debian
+    exit -1
+  fi
+  echo Installing build dependencies
+  echo
+  sudo apt-get install git-core gnupg flex bison gperf libsdl-dev libesd0-dev libwxgtk2.8-dev build-essential zip curl libncurses5-dev zlib1g-dev ia32-libs lib32z1-dev lib32ncurses5-dev gcc-multilib g++-multilib sharutils lzop gcc-arm-linux-gnueabi
+  echo
+}
+
+
+function action_menuconfig_diff() {
+  local config_type="$1"
+
+  if [ -z "$config_type" ]
+  then
+    echo "Error: no config type specified
+
+Please specify a valid config type: device / option.
+"
+    exit -1
+  fi
+
+  if [[ ! ( "$config_type" -eq "device" || "$config_type" -eq "option" ) ]]
+  then
+    echo "Error: invalid config type \"$config_type\" specified
+
+Please specify a valid config type: device / option.
+"
+    exit -1
+  fi
+
+  local baseconfig="${MARVIN_SELECTED_PLATFORM_ROOT}/config/base.config"
+  if [ ! -f "$baseconfig" ]
+  then
+    echo "Error: the specified base config does not exist at:
+$baseconfig
+"
+    exit -1
+  fi
+  
+  local selected="$2"
+
+  if [ -z "$selected" ]
+  then
+    echo "Error: no ${config_type} config specified
+
+Please specify a ${config_type} config.
+"
+    exit -1
+  fi
+
+  local selectedconfig="${MARVIN_SELECTED_PLATFORM_ROOT}/config/${config_type}/${selected}.config"
+  if [ ! -f "$selectedconfig" ]
+  then
+    echo "The specified ${config_type} config does not exist at:
+$selectedconfig
+"
+    read -p "Do you want to create a new empty config? (y/N) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]
+    then
+      touch "$selectedconfig"
+    else
+      exit -1
+    fi
+  fi
+
+  if [ -f .config ]
+  then
+    cp .config .config.marvinbackup
+  fi
+
+  echo "Running make oldnoconfig on the base config to make sure it's up to date"
+  cp "$baseconfig" .config
+  "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS oldnoconfig
+  cp .config .config.marvinbase
+
+  "${MARVIN_ROOT}/kconfig_merge" "$baseconfig" "$selectedconfig" > .config
+  
+  "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS menuconfig
+
+  echo "## Please enter a description of this configuration below:" > .config.marvinbackuphead
+  cat "$selectedconfig" | grep "^### " | sed 's/^### *//g' >> .config.marvinbackuphead
+  editor .config.marvinbackuphead
+  cat .config.marvinbackuphead | grep -v "^## " | sed "s/^/### /g" > "$selectedconfig"
+  rm .config.marvinbackuphead
+
+  echo Changes made:
+  "${MARVIN_ROOT}/kconfig_diff" .config.marvinbase .config
+  echo
+
+  echo Saving config to $selectedconfig
+  "${MARVIN_ROOT}/kconfig_diff" .config.marvinbase .config >> "$selectedconfig"
+
+  rm .config.marvinbase
+
+  if [ -f .config.marvinbackup ]
+  then
+    mv .config.marvinbackup .config
+  fi
+}
+
+
+function action_menuconfig_base() {
+  echo "Warning: it is not recommended to edit the base config. Any device specific settings should go to the device configs. Most other settings can be added in option configs. You do not need to make a separate option config for each individual settings, you can bundle a complete set of your favorite settings in one option config and name it \"tweaks\" or so.
+
+This tool only stores the \"changes\" to the base config in the device and option configs. If you then change these same settings again in the base config, the end result might be unpredictable.
+
+Probably the only reason for editing the base config is when there are changes in the config structure of the source tree or when switching to an entirely different source tree.
+"
+  read -p "Are you really sure you want to edit the base config? (y/N) " -n 1 -r
+  echo
+  if [[ ! $REPLY =~ ^[Yy]$ ]]
+  then
+    exit -1
+  fi
+
+  local selectedconfig="${MARVIN_SELECTED_PLATFORM_ROOT}/config/base.config"
+  if [ ! -f "$selectedconfig" ]
+  then
+    echo "The base config does not exist at:
+$selectedconfig
+"
+    exit -1
+  fi
+
+  if [ -f .config ]
+  then
+    cp .config .config.marvinbackup
+  fi
+
+  cp "$selectedconfig" .config
+  cp "$selectedconfig" .config.marvinbase
+  
+  "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS menuconfig
+
+  echo "## Please enter a description of this configuration below:" > .config.marvinbackuphead
+  cat "$selectedconfig" | grep "^### " | sed 's/^### *//g' >> .config.marvinbackuphead
+  editor .config.marvinbackuphead
+  cat .config.marvinbackuphead | grep -v "^## " | sed "s/^/### /g" > "$selectedconfig"
+  rm .config.marvinbackuphead
+  cat .config | grep -v "^### *" >> "$selectedconfig"
+
+  echo Changes made:
+  "${MARVIN_ROOT}/kconfig_diff" .config.marvinbase .config
+  
+  rm .config.marvinbase
+  
+  if [ -f .config.marvinbackup ]
+  then
+    mv .config.marvinbackup .config
+  fi
+}
+
+
+function action_menuconfig_device() {
+  if [ -z "$1" ]
+  then
+    echo "No config specified
+Please specify a device config:
+${underline}deviceconfig${normal}
+An empty config file will be created if the config specified does not exist. Only changed options will be stored in the config file.
+"
+    exit -1
+  fi
+
+  action_menuconfig_diff "device" "$@"
+}
+
+
+function action_menuconfig_option() {
+  if [ -z "$1" ]
+  then
+    echo "No config specified
+Please specify a option config:
+${underline}optionconfig${normal}
+An empty config file will be created if the config specified does not exist. Only changed options will be stored in the config file.
+"
+    exit -1
+  fi
+
+  action_menuconfig_diff "option" "$@"
+}
+
+
+function action_help() {
+  echo "Usage: ./marvin ${underline}command${normal}
+
+${bold}install_builddep${normal}
+Automatically install build dependencies on Ubuntu / Debian (recommended: Ubuntu 12.04 LTS 64-bit).
+
+${bold}platform${normal}
+Select the platform to use.
+When run without arguments, a list of available platform is shown.
+
+${bold}config${normal}
+Select the build profile and generate a .config file or select manual mode to use an existing .config file.
+When run without arguments, a list of available build profiles is shown.
+
+${bold}profiles${normal}
+Edit the list of build profiles.
+
+${bold}build${normal}
+Build a kernel image based on the selected build profile.
+  
+${bold}build_all${normal}
+Build a kernel image for each of the build profiles available in the settings file.
+
+${bold}build_package${normal}
+Build a kernel image based on the selected build profile.
+Additionally the kernel is copied to a folder with a timestamp and zipped into an archive.
+
+${bold}build_package_all${normal}
+Build a kernel image for each of the build profiles available in the settings file.
+Additionally the kernels are copied to a folder with a timestamp and zipped into an archive.
+
+${bold}build_modules${normal}
+Build a kernel together with the kernel modules based on the selected build profile.
+
+${bold}menuconfig_device${normal}
+${bold}menuconfig_option${normal}
+Edit or add a device or option config using menuconfig. An empty config file will be created if the config specified does not exist. Only changed settings will be stored in the config file.
+
+${bold}menuconfig_base${normal}
+Edit the base config using menuconfig.
+
+${bold}clean${normal}
+Run make clean on the source tree.
+Removes most of the files generated by the kernel build system, but keep the kernel configuration.
+
+${bold}mrproper${normal}
+Run make mrproper on the source tree.
+Removes all of the generated files by the kernel build system, including the configuration and some various backup files.
+
+${bold}distclean${normal}
+Run make distclean on the source tree.
+Does everything mrproper does and removes some editor backup and patch leftover files.
+
+${bold}help${normal}
+Show this help information.
+"
+}
+
+################################################################################
+# controller
+################################################################################
+
+display_app_label
+
+MARVIN_ROOT="$(readlink -f "`dirname "$0"`")"
+MARVIN_PLATFORM_ROOT="${MARVIN_ROOT}/platform"
+
+command_name="$(basename "$0")"
+script_name="$(basename "$(test -L "$0" && readlink "$0" || echo "$0")")"
+if [ "$command_name" != "$script_name" ]
+then
+  action="$command_name"
+else
+  if [ $# -lt 1 ]
+  then
+    echo Error: no command specified
+    echo
+    action_help
+    exit -1
+  fi
+
+  action="$1"
+  shift 1
+fi
+
+case "$action" in
+  platform)
+    action_platform "$@"
+    ;;
+  install_builddep)
+    action_install_builddep "$@"
+    ;;
+  config)
+    load_settings
+    action_config "$@"
+    ;;
+  profiles)
+    load_settings
+    action_profiles "$@"
+    ;;
+  build)
+    load_settings
+    action_build "$@"
+    ;;
+  build_all)
+    load_settings
+    action_build_all "$@"
+    ;;
+  build_package)
+    load_settings
+    action_build_package "$@"
+    ;;
+  build_package_all)
+    load_settings
+    action_build_package_all "$@"
+    ;;
+  build_modules)
+    load_settings
+    action_build_modules "$@"
+    ;;
+  menuconfig_base)
+    load_settings
+    action_menuconfig_base "$@"
+    ;;
+  menuconfig_device)
+    load_settings
+    action_menuconfig_device "$@"
+    ;;
+  menuconfig_option)
+    load_settings
+    action_menuconfig_option "$@"
+    ;;
+  clean)
+    load_settings
+    "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS clean "$@"
+    ;;
+  mrproper)
+    load_settings
+    "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS mrproper "$@"
+    clear_current_build_profile
+    ;;
+  distclean)
+    load_settings
+    "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS distclean "$@"
+    clear_current_build_profile
+    ;;
+  help)
+    action_help "$@"
+    ;;
+  *)
+    echo Error: command $action not recognized
+    echo
+    action_help "$@"
+    exit -1
+    ;;
+esac
+

@@ -1,4 +1,7 @@
-marvin
+Marvin
 ======
 
-Marvin - Android kernel build tool
+Marvin the Paranoid Android Kernel Builder
+by phjanderson
+
+TODO: write a manual ;-)
