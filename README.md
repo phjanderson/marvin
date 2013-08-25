@@ -158,3 +158,18 @@ Run make distclean on the source tree:
 ./marvin distclean  
 Does everything mrproper does and removes some editor backup and patch leftover files.
 
+
+Settings
+------
+
+Marvin has default settings configured so you can use it right away. You might want to change some of it's settings though.
+
+Let's change the for example the *builder alias*. This is a short name added to the file names of the generated kernels and folders, kind of like your signature.
+
+First we make a copy of the example config file:  
+cp platform/rk3188/settings.example platform/rk3188/settings
+
+Now open it in an editor and add this line:  
+`MARVIN_BUILDER_ALIAS="phja"`
+
+The example config contains information about the available settings.
