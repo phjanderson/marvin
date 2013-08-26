@@ -140,6 +140,8 @@ Marvin only stores the "changes" to the base config in the device and option con
 
 Probably the only reason for editing the base config is when there are changes in the config structure of the source tree or when switching to an entirely different source tree.
 
+_RK3188 tip: the overclock settings are located in System Type > RK3188 Custom Tweaks > CPU/GPU/DDR Frequency Scaling_
+
 
 Cleaning up
 ------
