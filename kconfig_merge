@@ -80,7 +80,4 @@ do
   fi
 done < "$source_filename"
 
-echo >> "$2"
-echo >> "$2"
-
 cat "$2"
