@@ -13,9 +13,11 @@ Marvin is an Android kernel build tool intended to make compiling kernels for mu
 Linux kernels are configured using a .config file. The settings in the config file decide which components are added to the kernel and how they should be configured. The settings can be chosen by using make menuconfig or by editing the config file directly. Different hardware devices require a different config file, different settings such as CPU or RAM clock speeds also need different config files. For example, if you would want to build kernels for 3 different devices, with 2 different CPU speeds and 2 different RAM speeds, you will end up with 12 config files. Each config needs to be built manually.
 
 Here's where Marvin comes to the rescue! Marvin works with a three level layered config system:
+
 1. a base config, common to all devices and configurations
 2. device configs, one for each device (T428, MK908, QX1, MK802IV, etc)
 3. option configs, any choice of settings can be combined in one config (a set of CPU frequencies, etc)
+
 The first contains a full config, the last two only the changes compared to the base config.
 
 These 3 are combined in a build profile, for example:  
