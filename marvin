@@ -24,12 +24,13 @@ set -e
 
 MARVIN_APPNAME="Marvin"
 MARVIN_APPLABEL="Marvin the Paranoid Android Kernel Builder"
-MARVIN_APPVERSION="1.0"
+MARVIN_APPVERSION="1.0.1"
 
 build_timestamp=""
 
 package=0
 build_modules=0
+textconfig=0
 
 marvin_current_build_profile_device=""
 marvin_current_build_profile_options=()
@@ -694,8 +695,14 @@ $selectedconfig
   cp .config .config.marvinbase
 
   "${MARVIN_ROOT}/kconfig_merge" "$baseconfig" "$selectedconfig" > .config
-  
-  "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS menuconfig
+
+  if [ "$textconfig" == "1" ]
+  then
+    "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS oldnoconfig
+    editor .config
+  else
+    "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS menuconfig
+  fi
 
   echo "## Please enter a description of this configuration below:" > .config.marvinbackuphead
   cat "$selectedconfig" | grep "^### " | sed 's/^### *//g' >> .config.marvinbackuphead
@@ -709,6 +716,7 @@ $selectedconfig
 
   echo Saving config to $selectedconfig
   "${MARVIN_ROOT}/kconfig_diff" .config.marvinbase .config >> "$selectedconfig"
+  echo
 
   rm .config.marvinbase
 
@@ -716,6 +724,9 @@ $selectedconfig
   then
     mv .config.marvinbackup .config
   fi
+
+  echo Regenerating the kernel configuration:
+  generate_config "${marvin_current_build_profile_device}" "${marvin_current_build_profile_options[@]}"
 }
 
 
@@ -750,7 +761,13 @@ $selectedconfig
   cp "$selectedconfig" .config
   cp "$selectedconfig" .config.marvinbase
   
-  "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS menuconfig
+  if [ "$textconfig" == "1" ]
+  then
+    "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS oldnoconfig
+    editor .config
+  else
+    "$MARVIN_MAKECMD" $MARVIN_MAKEOPTS menuconfig
+  fi
 
   echo "## Please enter a description of this configuration below:" > .config.marvinbackuphead
   cat "$selectedconfig" | grep "^### " | sed 's/^### *//g' >> .config.marvinbackuphead
@@ -761,6 +778,7 @@ $selectedconfig
 
   echo Changes made:
   "${MARVIN_ROOT}/kconfig_diff" .config.marvinbase .config
+  echo
   
   rm .config.marvinbase
   
@@ -768,6 +786,15 @@ $selectedconfig
   then
     mv .config.marvinbackup .config
   fi
+
+  echo Regenerating the kernel configuration:
+  generate_config "${marvin_current_build_profile_device}" "${marvin_current_build_profile_options[@]}"
+}
+
+
+function action_textconfig_base() {
+  textconfig=1
+  action_menuconfig_base "$@"
 }
 
 
@@ -786,6 +813,12 @@ An empty config file will be created if the config specified does not exist. Onl
 }
 
 
+function action_textconfig_device() {
+  textconfig=1
+  action_menuconfig_device "$@"
+}
+
+
 function action_menuconfig_option() {
   if [ -z "$1" ]
   then
@@ -798,6 +831,12 @@ An empty config file will be created if the config specified does not exist. Onl
   fi
 
   action_menuconfig_diff "option" "$@"
+}
+
+
+function action_textconfig_option() {
+  textconfig=1
+  action_menuconfig_option "$@"
 }
 
 
@@ -836,11 +875,14 @@ ${bold}build_modules${normal}
 Build a kernel together with the kernel modules based on the selected build profile.
 
 ${bold}menuconfig_device${normal}
+${bold}textconfig_device${normal}
 ${bold}menuconfig_option${normal}
-Edit or add a device or option config using menuconfig. An empty config file will be created if the config specified does not exist. Only changed settings will be stored in the config file.
+${bold}textconfig_option${normal}
+Edit or add a device or option config using menuconfig or a text editor. An empty config file will be created if the config specified does not exist. Only changed settings will be stored in the config file.
 
 ${bold}menuconfig_base${normal}
-Edit the base config using menuconfig.
+${bold}textconfig_base${normal}
+Edit the base config using menuconfig or a text editor.
 
 ${bold}clean${normal}
 Run make clean on the source tree.
@@ -931,7 +973,19 @@ case "$action" in
     ;;
   menuconfig_option)
     load_settings
-    action_menuconfig_option "$@"
+    action_textconfig_option "$@"
+    ;;
+  textconfig_base)
+    load_settings
+    action_textconfig_base "$@"
+    ;;
+  textconfig_device)
+    load_settings
+    action_textconfig_device "$@"
+    ;;
+  textconfig_option)
+    load_settings
+    action_textconfig_option "$@"
     ;;
   clean)
     load_settings

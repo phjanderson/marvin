@@ -18,7 +18,7 @@
 
 if [ $# -lt 2 ]
 then
-  echo "Kernel config merge tool 1.0
+  echo "Kernel config merge tool 1.0.0
 by phjanderson
 
 Usage: ./kconfig_merge.sh source_file change_file

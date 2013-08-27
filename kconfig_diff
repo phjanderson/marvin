@@ -18,7 +18,7 @@
 
 if [ $# -lt 2 ]
 then
-  echo "Kernel config diff tool 1.0
+  echo "Kernel config diff tool 1.0.0
 by phjanderson
 
 Usage: ./kconfig_diff.sh source_file target_file
