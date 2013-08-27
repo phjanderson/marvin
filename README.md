@@ -1,9 +1,10 @@
 Marvin
 ======
-Marvin the Paranoid Android Kernel Builder
-
+Marvin the Paranoid Android Kernel Builder  
 by phjanderson
 
+More info / discussion:  
+http://www.freaktab.com/showthread.php?6701-Marvin-automated-multi-device-kernel-build-tool
 
 About
 ------
