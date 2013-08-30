@@ -24,7 +24,7 @@ set -e
 
 MARVIN_APPNAME="Marvin"
 MARVIN_APPLABEL="Marvin the Paranoid Android Kernel Builder"
-MARVIN_APPVERSION="1.0.1"
+MARVIN_APPVERSION="1.0.2"
 
 build_timestamp=""
 
@@ -973,7 +973,7 @@ case "$action" in
     ;;
   menuconfig_option)
     load_settings
-    action_textconfig_option "$@"
+    action_menuconfig_option "$@"
     ;;
   textconfig_base)
     load_settings
