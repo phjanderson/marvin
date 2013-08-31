@@ -135,11 +135,11 @@ You can edit existing configs in the same way.
 The calculated changes might sometimes also list settings which you didn't modify directly. This is normal, changing a setting can cause dependent settings to be altered as well.
 
 You can do the same fore device configs:  
-./marvin menuconfig_device
+./marvin menuconfig_device t428
 
 You can also use textconfig if you prefer to use a text editor instead of menuconfig:  
 ./marvin textconfig_option test  
-./marvin textconfig_device  
+./marvin textconfig_device t428  
 This can come in handy sometimes as the menu structure is quite complex.
 
 Warning: it is not recommended to edit the base config. Any device specific settings should go to the device configs. Most other settings can be added in option configs. You do not need to make a separate option config for each individual settings, you can bundle a complete set of your favorite settings in one option config and name it "tweaks" or so.
