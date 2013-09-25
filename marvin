@@ -24,7 +24,7 @@ set -e
 
 MARVIN_APPNAME="Marvin"
 MARVIN_APPLABEL="Marvin the Paranoid Android Kernel Builder"
-MARVIN_APPVERSION="1.0.2"
+MARVIN_APPVERSION="1.0.3"
 
 build_timestamp=""
 
@@ -606,7 +606,7 @@ function action_platform() {
     exit -1
   fi
 
-  echo "MARVIN_SELECTED_PLATFORM=\"rk3188\"" > "${MARVIN_PLATFORM_ROOT}/selected_platform"
+  echo "MARVIN_SELECTED_PLATFORM=\"$1\"" > "${MARVIN_PLATFORM_ROOT}/selected_platform"
   
   echo "Selected platfom ${MARVIN_SELECTED_PLATFORM}"
   echo "Platform directory is ${MARVIN_SELECTED_PLATFORM_ROOT}"
@@ -622,7 +622,7 @@ function action_install_builddep() {
   fi
   echo Installing build dependencies
   echo
-  sudo apt-get install git-core gnupg flex bison gperf libsdl-dev libesd0-dev libwxgtk2.8-dev build-essential zip curl libncurses5-dev zlib1g-dev ia32-libs lib32z1-dev lib32ncurses5-dev gcc-multilib g++-multilib sharutils lzop gcc-arm-linux-gnueabi
+  sudo apt-get install git-core gnupg flex bison gperf libsdl-dev libesd0-dev libwxgtk2.8-dev build-essential zip curl libncurses5-dev zlib1g-dev ia32-libs lib32z1-dev lib32ncurses5-dev gcc-multilib g++-multilib sharutils lzop gcc-arm-linux-gnueabi lzop
   echo
 }
 
