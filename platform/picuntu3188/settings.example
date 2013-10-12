@@ -1,0 +1,30 @@
+# The builder alias will be used in the file names of the compiled kernels
+# please use a short name without spaces
+# default: "marvin"
+#
+# MARVIN_BUILDER_ALIAS="me"
+
+# By default a compressed kernel image is built, to build an uncompressed kernel image, enter: kernel.img
+# default: "zkernel.img"
+#
+# MARVIN_KERNEL_BUILD_TARGET="kernel.img"
+
+# The location of the kernel source tree
+# warning: while this tool could be used with any RK3188 kernel source tree, some of the example device and option configs requires modifications on the kernel
+# default: "${MARVIN_ROOT}/../Kernel-3188"
+#
+# as a relative path:
+# MARVIN_KERNEL_SRC_ROOT="${MARVIN_ROOT}/../Kernel-3188"
+# as an absolute pat:h
+# MARVIN_KERNEL_SRC_ROOT="/home/me/my-kernel"
+
+# The make options influence the compiler, only change these when you know what you're doing
+# default: "ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- -j2"
+#
+# MARVIN_MAKEOPTS="ARCH=arm CROSS_COMPILE=arm-linux-gnueabi- -j4"
+
+# The make command to use for compilation, only change this when you know what you're doing
+# default: "make"
+#
+# MARVIN_MAKEOPTS="make"
+
