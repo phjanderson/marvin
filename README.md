@@ -50,7 +50,16 @@ git clone https://github.com/phjanderson/marvin
 You will also need a kernel source tree, for the RK3188 download:  
 git clone https://github.com/phjanderson/Kernel-3188
 
-By default Marvin is configured for the RK3188 platform and looks for the kernel sources in a folder Kernel-3188 next to the marvin folder.
+for the Minix Neo X7 download:  
+git clone https://github.com/phjanderson/Kernel-3188-X7
+
+for PicUntu download:  
+git clone https://github.com/phjanderson/Linux3188
+
+for Linuxium download:  
+git clone https://github.com/phjanderson/3188-SRC-AP6210
+
+By default Marvin is configured for the RK3188 platform and looks for the kernel sources in a folder Kernel-3188 next to the marvin folder. You can switch the platform using ./marvin platform.
 
 Marvin can use other kernel source trees, but many of the bundled device and option configs require patches in the kernel source tree.
 
